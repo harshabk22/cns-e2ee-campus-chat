@@ -5,10 +5,11 @@ Features:
 - Zero external dependencies (uses Python standard library ThreadingHTTPServer).
 - Real Diffie-Hellman 2048-bit key exchange & AES-256-CBC + HMAC-SHA256 engine.
 - Dynamic multi-user peer discovery with 15-second heartbeat registry.
-- Clean session-based Display Name onboarding and switching.
+- Clean session-based Display Name onboarding and instantaneous switching without ghost peers.
 - Partitioned per-conversation message storage with zero cross-talk.
-- Live Packet Inspector for outbound AND inbound cryptograms.
-- Auto-resetting MITM tamper attack simulator with dismissible security alerts.
+- Live Packet Inspector for outbound AND inbound cryptograms with responsive mobile drawer.
+- Auto-resetting MITM tamper attack simulator with dismissible security alerts & inline transcript notices.
+- Zero-flicker DOM diffing for chat feeds and sidebar, preserving scroll and text selection.
 """
 
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -78,16 +79,18 @@ HTML_PAGE = """<!DOCTYPE html>
         .logo-title { font-size: 18px; font-weight: 700; color: #1e293b; }
         .badge { background: #dcfce7; color: #166534; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 9999px; }
         
-        .header-right { display: flex; align-items: center; gap: 16px; font-size: 13px; }
+        .header-right { display: flex; align-items: center; gap: 14px; font-size: 13px; }
         .user-identity-chip { background: #f1f5f9; border: 1px solid var(--border); padding: 5px 12px; border-radius: 20px; display: flex; align-items: center; gap: 8px; font-weight: 500; }
         .switch-name-btn { background: none; border: none; color: var(--primary); font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline; padding: 0; }
         .switch-name-btn:hover { color: var(--primary-hover); }
         .server-info { font-size: 11px; color: var(--muted); font-family: monospace; }
+        .inspector-toggle-btn { display: none; background: #0f172a; color: #f1f5f9; border: 1px solid #334155; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
+        .inspector-toggle-btn:hover { background: #1e293b; }
         
-        .main-container { display: flex; flex: 1; overflow: hidden; }
+        .main-container { display: flex; flex: 1; overflow: hidden; position: relative; }
         
         /* Left Sidebar */
-        .sidebar { width: 280px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+        .sidebar { width: 280px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
         .sidebar-section-title { padding: 14px 16px 8px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
         .my-card { margin: 8px 12px 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; display: flex; align-items: center; gap: 10px; }
         .my-avatar { width: 36px; height: 36px; border-radius: 50%; background: #2563eb; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
@@ -124,10 +127,13 @@ HTML_PAGE = """<!DOCTYPE html>
         .msg-bubble { padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.4; word-break: break-word; }
         .msg.sent .msg-bubble { background: var(--primary); color: #ffffff; border-bottom-right-radius: 2px; }
         .msg.received .msg-bubble { background: #f1f5f9; color: var(--text); border-bottom-left-radius: 2px; border: 1px solid var(--border); }
+        .msg.tampered-msg .msg-bubble { background: #fef2f2 !important; color: #991b1b !important; border: 1px dashed #f87171 !important; font-size: 13px; font-weight: 500; }
+        
         .msg-meta { font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 6px; }
         .msg.sent .msg-meta { align-self: flex-end; color: var(--muted); }
         .msg.received .msg-meta { align-self: flex-start; color: var(--muted); }
         .verified-tag { color: var(--success); font-weight: 600; font-size: 10px; display: flex; align-items: center; gap: 2px; }
+        .tampered-tag { color: var(--danger); font-weight: 700; font-size: 10px; display: flex; align-items: center; gap: 2px; }
         
         .bottom-panel { border-top: 1px solid var(--border); padding: 14px 20px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; }
         .mitm-bar-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -142,7 +148,7 @@ HTML_PAGE = """<!DOCTYPE html>
         .send-btn:disabled { background: #94a3b8; cursor: not-allowed; }
         
         /* Live Packet Inspector */
-        .inspector { width: 340px; background: #0f172a; color: #e2e8f0; border-left: 1px solid #334155; display: flex; flex-direction: column; font-family: monospace; font-size: 11px; }
+        .inspector { width: 340px; background: #0f172a; color: #e2e8f0; border-left: 1px solid #334155; display: flex; flex-direction: column; font-family: monospace; font-size: 11px; flex-shrink: 0; }
         .inspector-header { padding: 12px 16px; border-bottom: 1px solid #1e293b; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: space-between; }
         .inspector-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
         .packet-card { background: #1e293b; border-radius: 6px; padding: 10px; border: 1px solid #334155; animation: fadeIn 0.2s ease-out; }
@@ -161,6 +167,38 @@ HTML_PAGE = """<!DOCTYPE html>
         .modal-error { color: var(--danger); font-size: 12px; margin-bottom: 12px; font-weight: 600; text-align: left; }
         .modal-btn { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; transition: 0.15s; }
         .modal-btn:hover { background: var(--primary-hover); }
+
+        /* Responsive Breakpoints */
+        @media (max-width: 960px) {
+            .inspector-toggle-btn { display: inline-flex; align-items: center; gap: 4px; }
+            .inspector {
+                position: fixed;
+                right: 0;
+                top: 57px;
+                bottom: 0;
+                width: 320px;
+                z-index: 100;
+                box-shadow: -6px 0 20px rgba(0,0,0,0.3);
+                transform: translateX(100%);
+                transition: transform 0.25s ease-in-out;
+            }
+            .inspector.open {
+                transform: translateX(0);
+            }
+        }
+
+        @media (max-width: 680px) {
+            header { padding: 10px 14px; }
+            .logo-title { font-size: 15px; }
+            .badge { display: none; }
+            .server-info { display: none; }
+            .main-container { flex-direction: column; }
+            .sidebar { width: 100%; max-height: 180px; border-right: none; border-bottom: 1px solid var(--border); }
+            .my-card { margin: 4px 10px 8px; padding: 6px 10px; }
+            .peer-list { display: flex; flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 8px; padding: 0 10px 8px; }
+            .peer-item { margin-bottom: 0; white-space: nowrap; flex-shrink: 0; padding: 6px 10px; }
+            .msg { max-width: 85%; }
+        }
     </style>
 </head>
 <body>
@@ -183,6 +221,7 @@ HTML_PAGE = """<!DOCTYPE html>
             <span class="badge">CNS Micro-Project</span>
         </div>
         <div class="header-right">
+            <button class="inspector-toggle-btn" id="btn-toggle-inspector" onclick="toggleInspector()">🛡️ Inspector</button>
             <div class="user-identity-chip">
                 <span>👤</span>
                 <span>Logged in as: <strong id="header-username">...</strong></span>
@@ -218,7 +257,7 @@ HTML_PAGE = """<!DOCTYPE html>
         <div class="chat-container">
             <div class="security-banner">
                 <span>🔒 E2EE Session: <b id="session-status">Select a peer to initiate Diffie-Hellman handshake</b></span>
-                <span style="color: var(--muted);">DH-2048 | AES-256-CBC | HMAC-SHA256</span>
+                <span style="color: var(--muted); font-size: 11px;">DH-2048 | AES-256-CBC | HMAC-SHA256</span>
             </div>
 
             <div class="alert-box" id="tamper-alert">
@@ -255,7 +294,7 @@ HTML_PAGE = """<!DOCTYPE html>
         </div>
 
         <!-- Live Packet Inspector -->
-        <div class="inspector">
+        <div class="inspector" id="packet-inspector">
             <div class="inspector-header">
                 <span>🛡️ Live Packet Inspector</span>
                 <span style="font-size: 10px; color: #64748b; font-weight: normal;">Live Cryptograms</span>
@@ -274,7 +313,8 @@ HTML_PAGE = """<!DOCTYPE html>
         let activeKeyPreview = '';
         let dismissedTamperIds = new Set();
         let renderedPacketKeys = new Set();
-        let lastMessageCount = 0;
+        let lastRenderedMessagesKey = '';
+        let lastRenderedPeersKey = '';
 
         function escapeHtml(str) {
             if (!str) return '';
@@ -284,6 +324,11 @@ HTML_PAGE = """<!DOCTYPE html>
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
+        }
+
+        function toggleInspector() {
+            const el = document.getElementById('packet-inspector');
+            if (el) el.classList.toggle('open');
         }
 
         function checkUserOnboarding() {
@@ -304,7 +349,7 @@ HTML_PAGE = """<!DOCTYPE html>
             setTimeout(() => input.focus(), 100);
         }
 
-        function saveDisplayName() {
+        async function saveDisplayName() {
             const input = document.getElementById('display-name-input');
             const name = input.value.trim();
             if (!name) {
@@ -314,14 +359,21 @@ HTML_PAGE = """<!DOCTYPE html>
                 return;
             }
 
-            const isSwitch = currentUser && currentUser !== name;
+            const oldName = currentUser;
+            const isSwitch = oldName && oldName !== name;
             currentUser = name;
             sessionStorage.setItem('cns_chat_username', name);
             document.getElementById('name-modal').style.display = 'none';
             updateUserUI();
 
             if (isSwitch) {
+                // Immediately deregister old name from relay server to avoid ghost peers
+                try {
+                    await fetch(`/api/leave?user=${encodeURIComponent(oldName)}`, { method: 'POST' });
+                } catch (e) {}
                 currentPeer = null;
+                lastRenderedPeersKey = '';
+                lastRenderedMessagesKey = '';
                 resetChatView();
             }
             pollPeers();
@@ -333,11 +385,37 @@ HTML_PAGE = """<!DOCTYPE html>
             document.getElementById('my-avatar-initial').innerText = (currentUser[0] || '?').toUpperCase();
         }
 
+        function updatePeerStatus(isOnline) {
+            const sessionStatusEl = document.getElementById('session-status');
+            const inputEl = document.getElementById('msg-input');
+            const sendBtn = document.getElementById('send-btn');
+            if (!currentPeer) {
+                sessionStatusEl.innerHTML = 'Select a peer to initiate Diffie-Hellman handshake';
+                inputEl.placeholder = 'Select an online peer first...';
+                inputEl.disabled = true;
+                sendBtn.disabled = true;
+                return;
+            }
+
+            if (isOnline) {
+                sessionStatusEl.innerHTML = `
+                    <span style="color:#16a34a">● Active with ${escapeHtml(currentPeer)}</span> 
+                    <span style="color:#64748b; font-size:11px;">(AES-256 Key: ${escapeHtml(activeKeyPreview || 'deriving...')})</span>
+                `;
+                inputEl.disabled = false;
+                sendBtn.disabled = false;
+                inputEl.placeholder = `Type an encrypted message to ${currentPeer}...`;
+            } else {
+                sessionStatusEl.innerHTML = `
+                    <span style="color:#e11d48">● ${escapeHtml(currentPeer)} is Offline</span> 
+                    <span style="color:#64748b; font-size:11px;">(Last active >15s ago. Select an online peer)</span>
+                `;
+                inputEl.placeholder = `${currentPeer} is currently offline. Waiting for heartbeat...`;
+            }
+        }
+
         function resetChatView() {
-            document.getElementById('session-status').innerHTML = 'Select a peer to initiate Diffie-Hellman handshake';
-            document.getElementById('msg-input').placeholder = 'Select an online peer first...';
-            document.getElementById('msg-input').disabled = true;
-            document.getElementById('send-btn').disabled = true;
+            updatePeerStatus(false);
             document.getElementById('messages-area').innerHTML = `
                 <div class="no-chat-selected">
                     <div style="font-size: 32px; margin-bottom: 12px;">👥</div>
@@ -351,7 +429,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 </div>
             `;
             renderedPacketKeys.clear();
-            lastMessageCount = 0;
+            lastRenderedMessagesKey = '';
             document.getElementById('tamper-alert').style.display = 'none';
         }
 
@@ -370,6 +448,15 @@ HTML_PAGE = """<!DOCTYPE html>
             const list = document.getElementById('peer-list');
             document.getElementById('peer-count').innerText = peers.length;
 
+            const peersKey = peers.slice().sort().join(',') + '::' + (currentPeer || '');
+            if (peersKey === lastRenderedPeersKey) {
+                if (currentPeer) {
+                    updatePeerStatus(peers.includes(currentPeer));
+                }
+                return;
+            }
+            lastRenderedPeersKey = peersKey;
+
             if (peers.length === 0) {
                 list.innerHTML = `
                     <div class="empty-peers">
@@ -378,6 +465,9 @@ HTML_PAGE = """<!DOCTYPE html>
                         <div>Open this link in another browser tab, incognito window, or on another campus device to chat!</div>
                     </div>
                 `;
+                if (currentPeer) {
+                    updatePeerStatus(false);
+                }
                 return;
             }
 
@@ -387,12 +477,16 @@ HTML_PAGE = """<!DOCTYPE html>
                 return;
             }
 
+            if (currentPeer) {
+                updatePeerStatus(peers.includes(currentPeer));
+            }
+
             let html = '';
             peers.forEach(p => {
                 const isActive = (p === currentPeer);
                 html += `
-                    <div class="peer-item ${isActive ? 'active' : ''}" onclick="selectPeer('${escapeHtml(p)}')">
-                        <div class="peer-avatar">${escapeHtml(p[0].toUpperCase())}</div>
+                    <div class="peer-item ${isActive ? 'active' : ''}" data-peer="${escapeHtml(p)}" onclick="selectPeer(this.getAttribute('data-peer'))">
+                        <div class="peer-avatar">${escapeHtml((p[0] || '?').toUpperCase())}</div>
                         <div style="flex: 1; min-width: 0;">
                             <div class="peer-name">${escapeHtml(p)}</div>
                             <div class="peer-status">● Online (E2EE Ready)</div>
@@ -406,7 +500,8 @@ HTML_PAGE = """<!DOCTYPE html>
         async function selectPeer(peer) {
             if (currentPeer === peer) return;
             currentPeer = peer;
-            pollPeers(); // re-render sidebar selection
+            lastRenderedPeersKey = ''; // trigger sidebar re-render to update highlight
+            pollPeers();
             document.getElementById('msg-input').disabled = false;
             document.getElementById('send-btn').disabled = false;
             document.getElementById('msg-input').placeholder = `Type an encrypted message to ${peer}...`;
@@ -419,7 +514,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 </div>
             `;
             renderedPacketKeys.clear();
-            lastMessageCount = 0;
+            lastRenderedMessagesKey = '';
             document.getElementById('tamper-alert').style.display = 'none';
 
             await ensureSession();
@@ -436,10 +531,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 });
                 const data = await res.json();
                 activeKeyPreview = data.key_preview || '';
-                document.getElementById('session-status').innerHTML = `
-                    <span style="color:#16a34a">Active with ${escapeHtml(currentPeer)}</span> 
-                    <span style="color:#64748b">(AES-256 Key: ${escapeHtml(activeKeyPreview)})</span>
-                `;
+                updatePeerStatus(true);
             } catch (err) {
                 console.error("Handshake error:", err);
             }
@@ -490,37 +582,50 @@ HTML_PAGE = """<!DOCTYPE html>
                 const res = await fetch(`/api/messages?user=${encodeURIComponent(currentUser)}&peer=${encodeURIComponent(currentPeer)}`);
                 const data = await res.json();
 
-                // Render Messages
-                const container = document.getElementById('messages-area');
                 const messages = data.messages || [];
+                const msgKey = messages.map(m => m.id + ':' + m.time + ':' + (m.tampered ? '1' : '0')).join('|');
 
-                if (messages.length === 0) {
-                    container.innerHTML = `
-                        <div style="margin: auto; text-align: center; color: var(--muted); font-size: 13px; max-width: 340px;">
-                            <div style="font-size: 24px; margin-bottom: 6px;">🔒</div>
-                            <div style="font-weight: 600; margin-bottom: 4px; color: #334155;">End-to-End Encrypted Session Active</div>
-                            <div>No messages yet with <b>${escapeHtml(currentPeer)}</b>. Type below to exchange encrypted packets.</div>
-                        </div>
-                    `;
-                    lastMessageCount = 0;
-                } else {
-                    let html = '';
-                    messages.forEach(m => {
-                        const isMe = (m.sender === currentUser);
-                        html += `
-                            <div class="msg ${isMe ? 'sent' : 'received'}">
-                                <div class="msg-bubble">${escapeHtml(m.text)}</div>
-                                <div class="msg-meta">
-                                    <span>${escapeHtml(m.time)}</span>
-                                    <span class="verified-tag">✓ VERIFIED (HMAC-SHA256)</span>
-                                </div>
+                // Zero-flicker: Only mutate DOM if messages array has actually changed
+                if (msgKey !== lastRenderedMessagesKey) {
+                    lastRenderedMessagesKey = msgKey;
+                    const container = document.getElementById('messages-area');
+
+                    if (messages.length === 0) {
+                        container.innerHTML = `
+                            <div style="margin: auto; text-align: center; color: var(--muted); font-size: 13px; max-width: 340px;">
+                                <div style="font-size: 24px; margin-bottom: 6px;">🔒</div>
+                                <div style="font-weight: 600; margin-bottom: 4px; color: #334155;">End-to-End Encrypted Session Active</div>
+                                <div>No messages yet with <b>${escapeHtml(currentPeer)}</b>. Type below to exchange encrypted packets.</div>
                             </div>
                         `;
-                    });
-                    container.innerHTML = html;
-                    if (messages.length !== lastMessageCount) {
+                    } else {
+                        let html = '';
+                        messages.forEach(m => {
+                            const isMe = (m.sender === currentUser);
+                            if (m.tampered) {
+                                html += `
+                                    <div class="msg ${isMe ? 'sent' : 'received'} tampered-msg">
+                                        <div class="msg-bubble">${escapeHtml(m.text)}</div>
+                                        <div class="msg-meta">
+                                            <span>${escapeHtml(m.time)}</span>
+                                            <span class="tampered-tag">🚨 REJECTED (HMAC Mismatch)</span>
+                                        </div>
+                                    </div>
+                                `;
+                            } else {
+                                html += `
+                                    <div class="msg ${isMe ? 'sent' : 'received'}">
+                                        <div class="msg-bubble">${escapeHtml(m.text)}</div>
+                                        <div class="msg-meta">
+                                            <span>${escapeHtml(m.time)}</span>
+                                            <span class="verified-tag">✓ VERIFIED (HMAC-SHA256)</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                        });
+                        container.innerHTML = html;
                         container.scrollTop = container.scrollHeight;
-                        lastMessageCount = messages.length;
                     }
                 }
 
@@ -532,7 +637,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 // Handle Tamper Alert (dismissible)
                 const alertBox = document.getElementById('tamper-alert');
                 if (data.tamper_detected && data.tamper_info) {
-                    const alertId = data.tamper_info.id;
+                    const alertId = String(data.tamper_info.id);
                     if (!dismissedTamperIds.has(alertId)) {
                         alertBox.style.display = 'flex';
                         document.getElementById('tamper-alert-text').innerText = 
@@ -553,7 +658,7 @@ HTML_PAGE = """<!DOCTYPE html>
             const alertBox = document.getElementById('tamper-alert');
             const alertId = alertBox.dataset.alertId;
             if (alertId) {
-                dismissedTamperIds.add(alertId);
+                dismissedTamperIds.add(String(alertId));
             }
             alertBox.style.display = 'none';
         }
@@ -588,6 +693,15 @@ HTML_PAGE = """<!DOCTYPE html>
             `;
             body.insertBefore(card, body.firstChild);
         }
+
+        // Clean beacon when closing tab
+        window.addEventListener('beforeunload', () => {
+            if (currentUser) {
+                try {
+                    navigator.sendBeacon(`/api/leave?user=${encodeURIComponent(currentUser)}`);
+                } catch (e) {}
+            }
+        });
 
         // Initialize application lifecycle
         checkUserOnboarding();
@@ -639,9 +753,17 @@ class WebAppHandler(BaseHTTPRequestHandler):
                 # 15-second active window
                 peers = [
                     u for u, t in user_last_seen.items()
-                    if u != user and (now - t) <= 15
+                    if (not user or u != user) and (now - t) <= 15
                 ]
             self._send_json({"peers": peers})
+
+        elif url.path == "/api/leave":
+            params = urllib.parse.parse_qs(url.query)
+            user = params.get('user', [''])[0].strip()
+            with server_lock:
+                if user:
+                    user_last_seen.pop(user, None)
+            self._send_json({"status": "left"})
 
         elif url.path == "/api/messages":
             params = urllib.parse.parse_qs(url.query)
@@ -679,13 +801,26 @@ class WebAppHandler(BaseHTTPRequestHandler):
                                 "time": item.get("time"),
                                 "error": item.get("error", "HMAC verification failed")
                             }
+                        messages_out.append({
+                            "id": item["id"],
+                            "sender": item["sender"],
+                            "recipient": item["recipient"],
+                            "text": (
+                                f"⚠️ [Tamper Simulation] Sent corrupted packet to {item['recipient']}. (Dropped by HMAC verification)."
+                                if item["sender"] == user else
+                                f"🚨 [Security Alert] Discarded tampered packet from {item['sender']}! HMAC signature verification failed."
+                            ),
+                            "time": item["time"],
+                            "tampered": True
+                        })
                     else:
                         messages_out.append({
                             "id": item["id"],
                             "sender": item["sender"],
                             "recipient": item["recipient"],
                             "text": item["text"],
-                            "time": item["time"]
+                            "time": item["time"],
+                            "tampered": False
                         })
 
             self._send_json({
@@ -701,10 +836,20 @@ class WebAppHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
         length = int(self.headers.get('Content-Length', 0))
-        post_data = self.rfile.read(length)
+        post_data = self.rfile.read(length) if length > 0 else b""
         data = json.loads(post_data.decode('utf-8')) if post_data else {}
 
-        if url.path == "/api/handshake":
+        if url.path == "/api/leave":
+            params = urllib.parse.parse_qs(url.query)
+            user = params.get('user', [''])[0].strip()
+            if not user and isinstance(data, dict):
+                user = data.get("user", "").strip()
+            with server_lock:
+                if user:
+                    user_last_seen.pop(user, None)
+            self._send_json({"status": "left"})
+
+        elif url.path == "/api/handshake":
             user = data.get("user", "").strip()
             peer = data.get("peer", "").strip()
             if not user or not peer:

@@ -58,6 +58,8 @@ class SecureChatClientGUI:
         self.peer_sessions = {}      # peer_username -> 32-byte AES session key
         self.pending_outbox = {}     # peer_username -> list of queued plaintexts
         self.pending_handshakes = set() # debouncing set for in-flight DH handshakes
+        self.unread_peers = set()    # peer_username set with unread messages
+        self.last_user_list = []     # cached list of online users from server
 
         # Setup GUI Elements
         self._setup_styles()
@@ -103,7 +105,10 @@ class SecureChatClientGUI:
 
         tk.Label(conn_frame, text="My Username:", bg="#FFFFFF", font=("Helvetica", 9, "bold")).grid(row=0, column=4, sticky="w")
         self.user_entry = tk.Entry(conn_frame, width=12, font=("Helvetica", 10))
-        default_user = getpass.getuser().capitalize() if getpass.getuser() else "Student"
+        try:
+            default_user = getpass.getuser().capitalize() if getpass.getuser() else "Student"
+        except Exception:
+            default_user = "Student"
         self.user_entry.insert(0, default_user)
         self.user_entry.grid(row=0, column=5, padx=(5, 10))
 
@@ -398,6 +403,8 @@ class SecureChatClientGUI:
             self.peer_sessions.clear()
             self.pending_outbox.clear()
             self.pending_handshakes.clear()
+            self.unread_peers.clear()
+            self.last_user_list.clear()
             self.conversations.clear()
             self.system_history.clear()
             self.active_peer = None
@@ -459,26 +466,36 @@ class SecureChatClientGUI:
             self.safe_after(0, self.disconnect_from_server)
 
     def _update_user_list(self, users):
-        current_active = self.active_peer or (
-            self.peer_listbox.get(self.peer_listbox.curselection()) if self.peer_listbox.curselection() else None
-        )
+        self.last_user_list = list(users)
+        current_active = self.active_peer
+
+        online_peers = [u for u in users if u != self.username]
+        if current_active and current_active not in online_peers:
+            self.status_label.configure(
+                text=f"⚠️ Peer '{current_active}' disconnected from server.",
+                fg="#D97706"
+            )
 
         self.peer_listbox.delete(0, tk.END)
-        for u in users:
-            if u != self.username:
-                self.peer_listbox.insert(tk.END, u)
+        for u in online_peers:
+            display_name = f"{u} (*)" if u in self.unread_peers else u
+            self.peer_listbox.insert(tk.END, display_name)
 
         if current_active:
             for i in range(self.peer_listbox.size()):
-                if self.peer_listbox.get(i) == current_active:
+                item_text = self.peer_listbox.get(i).replace(" (*)", "").strip()
+                if item_text == current_active:
                     self.peer_listbox.selection_set(i)
                     break
 
     def on_peer_select(self, event=None):
         if not self.peer_listbox.curselection():
             return
-        selected_peer = self.peer_listbox.get(self.peer_listbox.curselection())
+        raw_name = self.peer_listbox.get(self.peer_listbox.curselection())
+        selected_peer = raw_name.replace(" (*)", "").strip()
+        self.unread_peers.discard(selected_peer)
         self._select_peer(selected_peer)
+        self._update_user_list(self.last_user_list)
 
     def initiate_handshake_with_selected(self):
         target = self.active_peer
@@ -650,6 +667,13 @@ class SecureChatClientGUI:
                 f"{plaintext}\n[🛡️ HMAC: VERIFIED AUTHENTIC]",
                 peer=sender
             )
+            if sender and sender != self.active_peer:
+                self.unread_peers.add(sender)
+                self._update_user_list(self.last_user_list)
+                self.status_label.configure(
+                    text=f"💬 New message from '{sender}'! (Click peer in list to view)",
+                    fg="#2563EB"
+                )
         except ValueError as e:
             # Tampering was detected!
             self.log_message(
