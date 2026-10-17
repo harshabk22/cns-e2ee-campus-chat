@@ -1,10 +1,9 @@
 """
 client.py - End-to-End Encrypted (E2EE) Desktop Chat Client (Hardened & Reviewed)
-Course: Cryptography and Network Security (CNS) Micro-Project
-Authors: Harshavardhan BK, Ullas S Revanaki, Gajavardhan reddy
+Course: Cryptography and Network Security (CNS)
 
 Role:
-Operated by Client Laptops (Harsha & Ullas). Connects to Server IP on college Wi-Fi.
+Operated by Client Nodes (Alice & Bob). Connects to Server IP on local network.
 Executes client-side Diffie-Hellman key exchange, AES-256 payload encryption,
 and HMAC-SHA256 integrity verification. Includes a live MITM tamper demonstration toggle.
 
@@ -100,7 +99,7 @@ class SecureChatClientGUI:
 
         tk.Label(conn_frame, text="My Username:", bg="#FFFFFF", font=("Helvetica", 9, "bold")).grid(row=0, column=4, sticky="w")
         self.user_entry = tk.Entry(conn_frame, width=12, font=("Helvetica", 10))
-        self.user_entry.insert(0, "Harsha")
+        self.user_entry.insert(0, "Alice")
         self.user_entry.grid(row=0, column=5, padx=(5, 10))
 
         self.btn_connect = tk.Button(

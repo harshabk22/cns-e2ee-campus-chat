@@ -8,7 +8,6 @@ Algorithms Implemented (CNS Syllabus Aligned):
 3. AES-256 in CBC Mode with PKCS#7 Padding (Dual backend: C-Optimized + Pure-Python)
 4. HMAC-SHA256 Message Authentication Code (Encrypt-then-MAC with timing-safe comparison)
 
-Authors: Harshavardhan BK, Ullas S Revanaki, Gajavardhan reddy
 Course: Cryptography and Network Security (E1CSA311)
 """
 
@@ -359,7 +358,7 @@ if __name__ == "__main__":
     print("  -> Cryptographic Equivalence Proof: K_A == K_B [PASS]")
 
     # UT-03: Message Encryption
-    test_msg = "Hey Ullas, did you finish the CNS assignment?"
+    test_msg = "Hey Bob, did you finish the assignment?"
     print(f"\n[UT-03] Testing encrypt_message() with plaintext: '{test_msg}'...")
     packet = encrypt_message(key_alice, test_msg)
     print(f"  -> Generated IV (16 bytes):   {packet['iv']}")

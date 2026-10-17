@@ -1,10 +1,9 @@
 """
 server.py - Zero-Knowledge Blind Socket Relay Server (Hardened & Reviewed)
-Course: Cryptography and Network Security (CNS) Micro-Project
-Authors: Harshavardhan BK, Ullas S Revanaki, Gajavardhan reddy
+Course: Cryptography and Network Security (CNS)
 
 Role:
-Operated by Host Laptop (Gajavardhan). Listens on local college Wi-Fi port 5555.
+Operated by Host Machine. Listens on local network port 5555.
 Operates as a pure blind relay: routes encrypted JSON envelopes between client
 sockets without holding private keys, shared secrets, or decrypting payloads.
 

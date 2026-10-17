@@ -2,7 +2,6 @@
 
 **Project Title:** Design and Implementation of an End-to-End Encrypted (E2EE) Chat Application on Local Campus Wi-Fi  
 **Course:** Cryptography and Network Security (Course Code: E1CSA311)  
-**Team Members:** Harshavardhan BK, Ullas S Revanaki, Gajavardhan reddy  
 
 ---
 
@@ -34,7 +33,7 @@
 #### A. Logic of the Solution
 The project implements a zero-knowledge End-to-End Encrypted (E2EE) client-server messaging system over a local college Wi-Fi network:
 1. **Endpoint Encryption Only:** Encryption and decryption take place strictly on student laptops (Alice & Bob).
-2. **Zero-Knowledge Blind Relay:** The server (Gajavardhan) only sees and routes randomized ciphertext frames `{iv, ciphertext, hmac, seq, timestamp}` over TCP sockets; it has no session keys and cannot inspect messages.
+2. **Zero-Knowledge Blind Relay:** The server only sees and routes randomized ciphertext frames `{iv, ciphertext, hmac, seq, timestamp}` over TCP sockets; it has no session keys and cannot inspect messages.
 3. **Syllabus Primitives:**
    - **Key Agreement:** Diffie-Hellman Key Exchange (RFC 3526 MODP group) to negotiate a secret key over public Wi-Fi without pre-shared secrets.
    - **Symmetric Encryption:** AES-256 in CBC mode (14 transformation rounds, 16-byte random IV, PKCS#7 padding).
@@ -146,7 +145,6 @@ Here is the clean, modular Python implementation ready for demonstration:
 """
 crypto_engine.py - Cryptography & Network Security Micro-Project
 Implements Diffie-Hellman Key Exchange, AES-256-CBC Encryption, and HMAC-SHA256 Integrity.
-Authors: Harshavardhan BK, Ullas S Revanaki, Gajavardhan reddy
 """
 import os
 import hmac
