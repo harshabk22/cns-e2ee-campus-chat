@@ -48,14 +48,24 @@ python3 server.py
 ```
 *(The terminal will show your local Wi-Fi IP address, like `192.168.1.45`)*
 
-#### 3. Start the Chat Windows (Alice & Bob)
-Open two terminal windows (or run on two different laptops on the same Wi-Fi):
+#### 3. Start the Chat Windows (Desktop Client)
+Open terminal windows (or run on two different laptops on the same Wi-Fi):
 ```bash
 python3 client.py
 ```
 - **Server IP:** `127.0.0.1` *(if testing on 1 laptop)* or the host's Wi-Fi IP.
 - **Port:** `5555`
-- **Username:** Type a username (e.g., `Alice` or `Bob`) and hit **Connect**!
+- **Username:** Automatically defaults to your system username (e.g., `Harsha`), or enter any custom name and hit **Connect**!
+
+#### 4. Or Run the Multi-User Web UI (No Installs Required)
+For a modern browser experience accessible across campus devices, phones, or laptops:
+```bash
+python3 web_ui.py
+```
+- Open `http://localhost:8080` in your browser (or on Wi-Fi: `http://<Wi-Fi IP>:8080`).
+- Enter your display name or roll number on the onboarding modal.
+- Active peers on the local network automatically appear via the 15-second heartbeat registry.
+- Click any peer to initiate Diffie-Hellman 2048-bit key exchange and chat privately with partitioned message storage and real-time live packet inspection!
 
 ---
 

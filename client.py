@@ -24,6 +24,7 @@ import time
 import datetime
 import sys
 import os
+import getpass
 
 # Import local cryptography engine
 try:
@@ -49,6 +50,9 @@ class SecureChatClientGUI:
         self.is_connecting = False
         self.is_destroyed = False
         self.username = ""
+        self.active_peer = None      # currently selected peer for isolated chat view
+        self.conversations = {}      # peer_username -> list of (tag, header_with_time, body)
+        self.system_history = []     # list of (tag, header_with_time, body) for connection events
         self.my_private_dh = None
         self.my_public_dh = None
         self.peer_sessions = {}      # peer_username -> 32-byte AES session key
@@ -99,7 +103,8 @@ class SecureChatClientGUI:
 
         tk.Label(conn_frame, text="My Username:", bg="#FFFFFF", font=("Helvetica", 9, "bold")).grid(row=0, column=4, sticky="w")
         self.user_entry = tk.Entry(conn_frame, width=12, font=("Helvetica", 10))
-        self.user_entry.insert(0, "Alice")
+        default_user = getpass.getuser().capitalize() if getpass.getuser() else "Student"
+        self.user_entry.insert(0, default_user)
         self.user_entry.grid(row=0, column=5, padx=(5, 10))
 
         self.btn_connect = tk.Button(
@@ -209,14 +214,66 @@ class SecureChatClientGUI:
     # ==========================================================================
     # LOGGING & HELPERS
     # ==========================================================================
-    def log_message(self, tag, header, body=""):
+    def log_message(self, tag, header, body="", peer=None):
+        if self.is_destroyed:
+            return
+        now = datetime.datetime.now().strftime("%H:%M:%S")
+        header_with_time = f"[{now}] {header}"
+
+        target_peer = peer if peer is not None else self.active_peer
+        if target_peer:
+            if target_peer not in self.conversations:
+                self.conversations[target_peer] = []
+            self.conversations[target_peer].append((tag, header_with_time, body))
+            if self.active_peer == target_peer:
+                self.chat_display.configure(state="normal")
+                self.chat_display.insert(tk.END, f"{header_with_time}\n", tag)
+                if body:
+                    self.chat_display.insert(tk.END, f"{body}\n\n")
+                self.chat_display.see(tk.END)
+                self.chat_display.configure(state="disabled")
+        else:
+            self.system_history.append((tag, header_with_time, body))
+            self.chat_display.configure(state="normal")
+            self.chat_display.insert(tk.END, f"{header_with_time}\n", tag)
+            if body:
+                self.chat_display.insert(tk.END, f"{body}\n\n")
+            self.chat_display.see(tk.END)
+            self.chat_display.configure(state="disabled")
+
+    def _select_peer(self, peer):
+        self.active_peer = peer
+        self._refresh_chat_display()
+        if peer not in self.peer_sessions:
+            self.initiate_handshake(peer)
+        else:
+            self.status_label.configure(
+                text=f"🔒 E2EE Active with '{peer}' (AES-256-CBC Session Key Ready)",
+                fg="#059669"
+            )
+
+    def _refresh_chat_display(self):
         if self.is_destroyed:
             return
         self.chat_display.configure(state="normal")
-        now = datetime.datetime.now().strftime("%H:%M:%S")
-        self.chat_display.insert(tk.END, f"[{now}] {header}\n", tag)
-        if body:
-            self.chat_display.insert(tk.END, f"{body}\n\n")
+        self.chat_display.delete("1.0", tk.END)
+        if self.active_peer:
+            messages = self.conversations.get(self.active_peer, [])
+            if not messages:
+                self.chat_display.insert(tk.END, f"[*] E2EE session opened with '{self.active_peer}'.\n[*] Send a message to exchange Diffie-Hellman keys and chat securely.\n\n", "system")
+            else:
+                for tag, header, body in messages:
+                    self.chat_display.insert(tk.END, f"{header}\n", tag)
+                    if body:
+                        self.chat_display.insert(tk.END, f"{body}\n\n")
+        else:
+            if self.system_history:
+                for tag, header, body in self.system_history:
+                    self.chat_display.insert(tk.END, f"{header}\n", tag)
+                    if body:
+                        self.chat_display.insert(tk.END, f"{body}\n\n")
+            else:
+                self.chat_display.insert(tk.END, "[*] Select an online peer on the left to start an encrypted chat.\n", "system")
         self.chat_display.see(tk.END)
         self.chat_display.configure(state="disabled")
 
@@ -341,7 +398,11 @@ class SecureChatClientGUI:
             self.peer_sessions.clear()
             self.pending_outbox.clear()
             self.pending_handshakes.clear()
+            self.conversations.clear()
+            self.system_history.clear()
+            self.active_peer = None
             self.log_message("system", "[*] Disconnected from relay server.")
+            self._refresh_chat_display()
 
     # ==========================================================================
     # RECEIVER LOOP WITH BYTE-LEVEL TCP LINE FRAMING
@@ -398,39 +459,36 @@ class SecureChatClientGUI:
             self.safe_after(0, self.disconnect_from_server)
 
     def _update_user_list(self, users):
-        current_selection = None
-        if self.peer_listbox.curselection():
-            current_selection = self.peer_listbox.get(self.peer_listbox.curselection())
+        current_active = self.active_peer or (
+            self.peer_listbox.get(self.peer_listbox.curselection()) if self.peer_listbox.curselection() else None
+        )
 
         self.peer_listbox.delete(0, tk.END)
         for u in users:
             if u != self.username:
                 self.peer_listbox.insert(tk.END, u)
 
-        if current_selection:
+        if current_active:
             for i in range(self.peer_listbox.size()):
-                if self.peer_listbox.get(i) == current_selection:
+                if self.peer_listbox.get(i) == current_active:
                     self.peer_listbox.selection_set(i)
                     break
 
-    def on_peer_select(self, event):
+    def on_peer_select(self, event=None):
         if not self.peer_listbox.curselection():
             return
         selected_peer = self.peer_listbox.get(self.peer_listbox.curselection())
-        if selected_peer not in self.peer_sessions:
-            self.initiate_handshake(selected_peer)
-        else:
-            self.status_label.configure(
-                text=f"🔒 E2EE Active with '{selected_peer}' (AES-256-CBC Session Key Ready)",
-                fg="#059669"
-            )
+        self._select_peer(selected_peer)
 
     def initiate_handshake_with_selected(self):
-        if not self.peer_listbox.curselection():
+        target = self.active_peer
+        if not target and self.peer_listbox.curselection():
+            target = self.peer_listbox.get(self.peer_listbox.curselection())
+        if not target:
             messagebox.showinfo("Select Peer", "Please select a peer from the online list first.")
             return
-        selected_peer = self.peer_listbox.get(self.peer_listbox.curselection())
-        self.initiate_handshake(selected_peer)
+        self._select_peer(target)
+        self.initiate_handshake(target)
 
     def initiate_handshake(self, peer_username):
         if not self.is_connected or not self.sock:
@@ -449,7 +507,7 @@ class SecureChatClientGUI:
             "is_reply": False
         }
         self._send_raw_packet(pkt)
-        self.log_message("system", f"[*] Sent Diffie-Hellman Public Key to '{peer_username}'. Negotiating shared key...")
+        self.log_message("system", f"[*] Sent Diffie-Hellman Public Key to '{peer_username}'. Negotiating shared key...", peer=peer_username)
 
     def _handle_incoming_key_exchange(self, sender, peer_pub, is_reply):
         # Remove from pending debouncing set
@@ -460,19 +518,21 @@ class SecureChatClientGUI:
             session_key = crypto_engine.compute_shared_session_key(peer_pub, self.my_private_dh)
             self.peer_sessions[sender] = session_key
         except ValueError as e:
-            self.log_message("alert", f"🚨 [KEY EXCHANGE FAILED] Malicious or invalid key from '{sender}': {e}")
+            self.log_message("alert", f"🚨 [KEY EXCHANGE FAILED] Malicious or invalid key from '{sender}': {e}", peer=sender)
             return
 
         self.log_message(
             "verified",
             f"🔑 [DH KEY AGREEMENT COMPLETE] Synchronized 256-bit AES Session Key with '{sender}'!",
-            f"Derived Key Fingerprint: {session_key[:8].hex()}... (Cipher: AES-256-CBC + HMAC-SHA256)"
+            f"Derived Key Fingerprint: {session_key[:8].hex()}... (Cipher: AES-256-CBC + HMAC-SHA256)",
+            peer=sender
         )
 
-        self.status_label.configure(
-            text=f"🔒 E2EE Active with '{sender}' (AES-256-CBC + HMAC-SHA256)",
-            fg="#059669"
-        )
+        if self.active_peer == sender:
+            self.status_label.configure(
+                text=f"🔒 E2EE Active with '{sender}' (AES-256-CBC + HMAC-SHA256)",
+                fg="#059669"
+            )
 
         # If this wasn't a reply, send our public key back
         if not is_reply:
@@ -484,12 +544,12 @@ class SecureChatClientGUI:
                 "is_reply": True
             }
             self._send_raw_packet(reply_pkt)
-            self.log_message("system", f"[*] Returned DH Public Key to '{sender}'. Both parties are now E2EE secure.")
+            self.log_message("system", f"[*] Returned DH Public Key to '{sender}'. Both parties are now E2EE secure.", peer=sender)
 
         # Flush any messages queued for this peer during key exchange
         if sender in self.pending_outbox and self.pending_outbox[sender]:
             queued_list = self.pending_outbox.pop(sender)
-            self.log_message("system", f"[*] Flushing {len(queued_list)} queued message(s) to '{sender}'...")
+            self.log_message("system", f"[*] Flushing {len(queued_list)} queued message(s) to '{sender}'...", peer=sender)
             for queued_msg in queued_list:
                 self._encrypt_and_transmit(sender, queued_msg)
 
@@ -501,11 +561,15 @@ class SecureChatClientGUI:
             messagebox.showwarning("Not Connected", "Please connect to the server first.")
             return
 
-        if not self.peer_listbox.curselection():
+        recipient = self.active_peer
+        if not recipient and self.peer_listbox.curselection():
+            recipient = self.peer_listbox.get(self.peer_listbox.curselection())
+            self._select_peer(recipient)
+
+        if not recipient:
             messagebox.showwarning("Select Recipient", "Please select a recipient from the 'Peers Online' list.")
             return
 
-        recipient = self.peer_listbox.get(self.peer_listbox.curselection())
         plaintext = self.msg_entry.get().strip()
         if not plaintext:
             return
@@ -518,7 +582,7 @@ class SecureChatClientGUI:
             if recipient not in self.pending_outbox:
                 self.pending_outbox[recipient] = []
             self.pending_outbox[recipient].append(plaintext)
-            self.log_message("system", f"[*] Key exchange pending with '{recipient}'. Queued message to auto-send.")
+            self.log_message("system", f"[*] Key exchange pending with '{recipient}'. Queued message to auto-send.", peer=recipient)
             self.initiate_handshake(recipient)
             return
 
@@ -554,16 +618,19 @@ class SecureChatClientGUI:
         # 4. Transmit packet over socket to blind server relay
         if self._send_raw_packet(pkt):
             if is_tampered:
+                self.mitm_corrupt_var.set(False)
                 self.log_message(
                     "alert",
-                    f"⚠️ [TAMPER ATTACK SIMULATED] Sent intentionally corrupted ciphertext to '{recipient}'!",
-                    f"Corrupted Ciphertext Preview: {pkt['ciphertext'][:24]}..."
+                    f"⚠️ [TAMPER ATTACK SIMULATED] Sent intentionally corrupted ciphertext to '{recipient}'!\n(MITM checkbox auto-reset to OFF)",
+                    f"Corrupted Ciphertext Preview: {pkt['ciphertext'][:24]}...",
+                    peer=recipient
                 )
             else:
                 self.log_message(
                     "sent",
                     f"You -> {recipient}:",
-                    f"{plaintext}\n(AES-256-CBC Encrypted & HMAC-SHA256 Signed)"
+                    f"{plaintext}\n(AES-256-CBC Encrypted & HMAC-SHA256 Signed)",
+                    peer=recipient
                 )
 
     def _handle_incoming_message(self, packet):
@@ -571,7 +638,7 @@ class SecureChatClientGUI:
         session_key = self.peer_sessions.get(sender)
 
         if not session_key:
-            self.log_message("alert", f"⚠️ [ERROR] Received message from '{sender}', but no shared DH session key exists!")
+            self.log_message("alert", f"⚠️ [ERROR] Received message from '{sender}', but no shared DH session key exists!", peer=sender)
             return
 
         # Attempt decryption and HMAC verification
@@ -580,14 +647,16 @@ class SecureChatClientGUI:
             self.log_message(
                 "received",
                 f"{sender}:",
-                f"{plaintext}\n[🛡️ HMAC: VERIFIED AUTHENTIC]"
+                f"{plaintext}\n[🛡️ HMAC: VERIFIED AUTHENTIC]",
+                peer=sender
             )
         except ValueError as e:
             # Tampering was detected!
             self.log_message(
                 "alert",
                 f"🚨 SECURITY ALERT: MESSAGE TAMPERING DETECTED FROM '{sender}'!",
-                f"Details: {e}\nAction: Packet was discarded. Plaintext was protected from alteration."
+                f"Details: {e}\nAction: Packet was discarded. Plaintext was protected from alteration.",
+                peer=sender
             )
             messagebox.showwarning(
                 "Security Alert: Message Tampered",
