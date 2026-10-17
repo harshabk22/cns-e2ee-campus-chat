@@ -1,75 +1,82 @@
-# 🔒 cns-e2ee-campus-chat
-> **End-to-End Encrypted (E2EE) Secure Chat Application for Campus Wi-Fi**  
-> *Course: Cryptography and Network Security (CNS - E1CSA311)*
+# 🔒 E2EE Campus Wi-Fi Chat
+> A lightweight, zero-knowledge private desktop chat app built for our college Cryptography & Network Security (CNS) micro-project.
 
 ---
 
-## 👥 Student Team
+### 💡 Why We Built This
+College hostel and campus Wi-Fi networks are shared by hundreds of students. If you chat over plain HTTP or unencrypted sockets, anyone with Wireshark can read your messages in plain text.
 
-| Name | USN | Contribution Role |
-| :--- | :--- | :--- |
-| **Harshavardhan BK** | 1MS23CS079 | Cryptographic Engine (DH-2048, AES-256-CBC, HMAC-SHA256, Testing) |
-| **Ullas S Revanaki** | 1MS23CS233 | Desktop Client GUI (Tkinter), Key Exchange Handshake, MITM Demo |
-| **Gajavardhan reddy** | 1MS23CS069 | Zero-Knowledge Blind Socket Relay Server, TCP Framing & Network Routing |
+We built this app so two students on the same campus Wi-Fi can chat with **total privacy**. Even the student hosting the relay server **cannot read or tamper with any message**.
 
 ---
 
-## 🛡️ Security Architecture & Algorithms
-
-1. **Key Agreement:** Diffie-Hellman Key Exchange (RFC 3526 2048-bit MODP Group 14) with safe-prime subgroup validation.
-2. **Key Derivation:** SHA-256 KDF with NIST SP 800-108 domain-separated subkeys (`k_enc` for encryption, `k_mac` for authentication).
-3. **Payload Confidentiality:** AES-256 in CBC mode with PKCS#7 padding.
-4. **Integrity & Tamper Detection:** HMAC-SHA256 (Encrypt-then-MAC) with constant-time verification.
-5. **Zero-Knowledge Relay Server:** Relays encrypted envelopes without holding private keys, shared secrets, or decrypting message payloads.
-6. **Robust TCP Framing:** Byte-level newline-delimited JSON (`b"\n"`) stream handling.
-
----
-
-## 📁 Repository Structure
+### 🧠 How It Works (In Plain English)
 
 ```text
-├── crypto_engine.py             # Core Cryptographic Library (DH, AES-256, HMAC, UT-01 to UT-05)
-├── server.py                    # Multi-threaded Blind Socket Relay Server
-├── client.py                    # Tkinter Desktop Chat GUI with MITM Attack Simulation
-├── Micro project Template-CNS.docx # Formal Project Proposal Document
-├── Review_2_and_3_Contents.md   # Complete Review 2 & 3 Deliverables & Test Evidence
-├── cns_flowchart.png            # End-to-End Cryptographic Sequence Flowchart
-├── cns_mindmap.png              # System Architecture Mindmap
-└── README.md                    # Project Documentation
+Harsha's Laptop                 Host Relay Server                 Ullas's Laptop
+     [ Alice ]                      [ Host ]                         [ Bob ]
+         │                              │                               │
+         │──── 1. Diffie-Hellman Key Exchange (Public Keys only) ──────>│
+         │<─── 2. Negotiates Shared 256-bit AES Key in Secret ──────────│
+         │                              │                               │
+         │==== 3. AES-256 Encrypted Message + HMAC-SHA256 Seal ========>│
+         │          (Server only sees scrambled ciphertext hex)         │
+         │                              │                               │
 ```
+
+1. **Secret Key Agreement:** When you click a classmate's name, both laptops agree on a temporary 256-bit AES key using **Diffie-Hellman (2048-bit)**. The secret key never travels across the network.
+2. **Ironclad Encryption:** Every message is locked with **AES-256 in CBC mode** before it ever leaves your machine.
+3. **Tamper Proof (HMAC):** An **HMAC-SHA256 seal** is stamped on each packet. If anyone on the Wi-Fi alters even 1 bit in transit, the message is instantly rejected.
+4. **Blind Relay:** The server simply forwards encrypted packets. It has zero keys and zero ability to decrypt.
 
 ---
 
-## 🚀 Quick Start Guide
+### 👥 The Team
 
-### Step 1: Run the Cryptographic Unit Test Suite (UT-01 to UT-05)
+| Name | USN | What We Built |
+| :--- | :--- | :--- |
+| **Harshavardhan BK** | 1MS23CS079 | Cryptographic Engine (DH, AES, HMAC, and self-testing) |
+| **Ullas S Revanaki** | 1MS23CS233 | Desktop Client GUI & Live MITM Tamper Simulator |
+| **Gajavardhan reddy** | 1MS23CS069 | Zero-Knowledge Blind Socket Relay Server & TCP Framing |
+
+---
+
+### 🚀 How to Run It (3 Easy Steps)
+
+No complicated installs or Docker needed! Just plain Python 3:
+
+#### 1. Test the Crypto Engine First
+Verify that all algorithms and tamper protections pass:
 ```bash
 python3 crypto_engine.py
 ```
-*Validates key generation, session key equivalence, AES encryption/decryption, and 1-bit tamper rejection.*
+*(You should see `ALL CRYPTOGRAPHIC TESTS PASSED WITH 100% SUCCESS!`)*
 
-### Step 2: Start the Relay Server (Host Laptop / Gajavardhan)
+#### 2. Start the Server (Host Laptop / Gajavardhan)
 ```bash
 python3 server.py
 ```
-*Listens on port `5555` and displays the local Wi-Fi IP address (e.g., `192.168.x.x`).*
+*(The terminal will show your local Wi-Fi IP address, like `192.168.1.45`)*
 
-### Step 3: Launch Clients (Alice / Harsha & Bob / Ullas)
-In two separate terminals:
+#### 3. Start the Chat Windows (Harsha & Ullas)
+Open two terminal windows (or run on two different laptops on the same Wi-Fi):
 ```bash
 python3 client.py
 ```
-- Enter Server IP (`127.0.0.1` for local testing or the Host Wi-Fi IP for multi-laptop demo).
-- Port: `5555`.
-- Username: `Harsha` / `Ullas`.
-- Click **Connect**.
+- **Server IP:** `127.0.0.1` *(if testing on 1 laptop)* or the host's Wi-Fi IP.
+- **Port:** `5555`
+- **Username:** Type your name and hit **Connect**!
 
 ---
 
-## ⚠️ Live MITM Tamper Attack Demo
-1. Connect both clients and select a peer from the **Peers Online** list.
-2. Check the box: `⚠️ Simulate Active MITM Tamper Attack (Corrupt Ciphertext Before Sending)`.
-3. Type and send a message.
-4. The receiver's client immediately rejects the message with:
-   `🚨 SECURITY ALERT: MESSAGE TAMPERING DETECTED!`.
-   The packet is discarded, demonstrating real-time HMAC-SHA256 integrity protection.
+### 🎯 Best Feature to Demo to Your Teacher (Live Hack Simulation)
+
+We built an intentional **MITM (Man-In-The-Middle) Tamper Toggle** right into the app to demonstrate integrity protection:
+
+1. Check the box:  
+   `⚠️ Simulate Active MITM Tamper Attack (Corrupt Ciphertext Before Sending)`
+2. Send a message like *"Let's meet at 5 PM"*.
+3. The app intentionally flips a bit in the encrypted data before sending.
+4. On the receiver's screen, an instant alert pops up:  
+   `🚨 SECURITY ALERT: MESSAGE TAMPERING DETECTED!`
+5. The corrupted packet is dropped immediately, proving that HMAC-SHA256 successfully caught the attack!
